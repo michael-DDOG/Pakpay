@@ -1,0 +1,9 @@
+NODE_ENV=development
+PORT=3000
+DATABASE_URL=postgresql://username:password@localhost:5432/fintech_db
+JWT_SECRET=your-super-secure-jwt-secret-key-change-this
+JWT_EXPIRE=7d
+BCRYPT_ROUNDS=10
+TRANSACTION_LIMIT_DAILY=500000
+TRANSACTION_LIMIT_SINGLE=100000
+MIN_TRANSFER_AMOUNT=10
