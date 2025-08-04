@@ -6,6 +6,8 @@ const rateLimit = require('express-rate-limit');
 const authRoutes = require('./routes/auth');
 const walletRoutes = require('./routes/wallet');
 const transferRoutes = require('./routes/transfer');
+const kycRoutes = require('./routes/kyc');
+const remittanceRoutes = require('./routes/remittance');
 const { errorHandler } = require('./middleware/errorHandler');
 const logger = require('./utils/logger');
 
@@ -24,16 +26,34 @@ const limiter = rateLimit({
   message: 'Too many requests from this IP, please try again later.'
 });
 
+const strictLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5, // Strict limit for sensitive operations
+  message: 'Too many attempts. Please try again later.'
+});
+
 app.use('/api/', limiter);
+app.use('/api/auth/login', strictLimiter);
+app.use('/api/kyc/verify-cnic', strictLimiter);
 
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/wallet', walletRoutes);
 app.use('/api/transfer', transferRoutes);
+app.use('/api/kyc', kycRoutes);
+app.use('/api/remittance', remittanceRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'healthy', timestamp: new Date().toISOString() });
+  res.status(200).json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    services: {
+      database: 'connected',
+      nadra: 'mock',
+      rapyd: 'mock'
+    }
+  });
 });
 
 // Error handling
@@ -42,4 +62,6 @@ app.use(errorHandler);
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   logger.info(`Server running on port ${PORT}`);
+  logger.info('NADRA Service: Mock Mode');
+  logger.info('Rapyd Service: Mock Mode');
 });
