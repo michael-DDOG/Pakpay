@@ -1,4 +1,3 @@
-
 const User = require('../models/User');
 const Wallet = require('../models/Wallet');
 const nadraService = require('./nadraService');
