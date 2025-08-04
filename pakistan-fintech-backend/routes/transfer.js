@@ -4,6 +4,7 @@ const { validateRequest, schemas } = require('../middleware/validation');
 const User = require('../models/User');
 const Wallet = require('../models/Wallet');
 const Transaction = require('../models/Transaction');
+const { getErrorMessage } = require('../utils/errorMessages');
 const db = require('../config/database');
 const logger = require('../utils/logger');
 
