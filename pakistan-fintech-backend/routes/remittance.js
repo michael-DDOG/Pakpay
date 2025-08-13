@@ -13,9 +13,9 @@ const router = express.Router();
 router.get('/corridors', authMiddleware, async (req, res) => {
   try {
     const corridors = [];
-   
+
     for (const [country, details] of Object.entries(rapydService.supportedCorridors)) {
-      const rateInfo = await rapydService.getExchangeRate(details.currency);
+      const rateInfo = await rapydService.getExchangeRate(details.currency, 'PKR');
       corridors.push({
         country,
         currency: details.currency,
@@ -24,12 +24,12 @@ router.get('/corridors', authMiddleware, async (req, res) => {
         available: true
       });
     }
-   
+
     res.json({
       corridors,
       lastUpdated: new Date().toISOString()
     });
-   
+
   } catch (error) {
     logger.error('Get corridors error:', error);
     res.status(500).json({
@@ -42,9 +42,9 @@ router.get('/corridors', authMiddleware, async (req, res) => {
 router.post('/exchange-rate', authMiddleware, async (req, res) => {
   try {
     const { fromCurrency, toCurrency = 'PKR', amount } = req.body;
-   
+
     const rateInfo = await rapydService.getExchangeRate(fromCurrency, toCurrency);
-   
+
     res.json({
       ...rateInfo,
       convertedAmount: amount ? (amount * rateInfo.rate).toFixed(2) : null,
@@ -53,19 +53,18 @@ router.post('/exchange-rate', authMiddleware, async (req, res) => {
         fxSpread: amount ? (amount * 0.005).toFixed(2) : null
       }
     });
-   
+
   } catch (error) {
     logger.error('Get exchange rate error:', error);
     res.status(400).json({
-      error: error.message || 'Failed to get exchange rate'
+      error: error.message || getErrorMessage('invalidRequest', req.headers['accept-language'])
     });
   }
 });
 
-// Create inbound remittance
-router.post('/inbound', authMiddleware, async (req, res) => {
+// Create inbound remittance (renamed to /remittance for frontend consistency)
+router.post('/remittance', authMiddleware, async (req, res) => {
   const client = await db.getClient();
- 
   try {
     const {
       senderCountry,
@@ -76,7 +75,7 @@ router.post('/inbound', authMiddleware, async (req, res) => {
       senderName,
       senderPhone
     } = req.body;
-   
+
     // Validate user KYC level for international remittance
     if (req.user.kyc_level < 2) {
       return res.status(403).json({
@@ -86,16 +85,16 @@ router.post('/inbound', authMiddleware, async (req, res) => {
         currentLevel: req.user.kyc_level
       });
     }
-   
+
     // Get user's wallet
     const wallet = await Wallet.findByUserId(req.user.id);
     if (!wallet) {
       throw new Error('Wallet not found');
     }
-   
+
     // Start transaction
     await client.query('BEGIN');
-   
+
     // Create remittance via Rapyd
     const remittanceResult = await rapydService.createInboundRemittance({
       senderCountry,
@@ -107,7 +106,7 @@ router.post('/inbound', authMiddleware, async (req, res) => {
       purpose,
       sourceOfFunds
     });
-   
+
     if (!remittanceResult.success) {
       await client.query('ROLLBACK');
       return res.status(400).json({
@@ -121,9 +120,9 @@ router.post('/inbound', authMiddleware, async (req, res) => {
         message: remittanceResult.message
       });
     }
-   
+
     const { transactionId, receivedAmount, exchangeRate } = remittanceResult.data;
-   
+
     // Create transaction record
     const transaction = await Transaction.create(client, {
       senderWalletId: null, // External sender
@@ -140,7 +139,7 @@ router.post('/inbound', authMiddleware, async (req, res) => {
         purpose
       }
     });
-   
+
     // Credit wallet
     const newBalance = await Wallet.updateBalance(
       client,
@@ -148,24 +147,24 @@ router.post('/inbound', authMiddleware, async (req, res) => {
       receivedAmount,
       'add'
     );
-   
+
     if (!newBalance) {
       throw new Error('Failed to credit wallet');
     }
-   
+
     // Update transaction status
     await Transaction.updateStatus(client, transaction.id, 'completed');
-   
+
     // Log transaction
     await Transaction.logTransaction(client, transaction.id, 'remittance_received', {
       rapydTransactionId: transactionId,
       amount: receivedAmount,
       newBalance: newBalance.balance
     });
-   
+
     // Commit transaction
     await client.query('COMMIT');
-   
+
     res.json({
       success: true,
       message: 'Remittance received successfully',
@@ -184,7 +183,7 @@ router.post('/inbound', authMiddleware, async (req, res) => {
         newBalance: newBalance.balance
       }
     });
-   
+
   } catch (error) {
     await client.query('ROLLBACK');
     logger.error('Remittance error:', error);
@@ -201,11 +200,11 @@ router.post('/inbound', authMiddleware, async (req, res) => {
 router.get('/status/:transactionId', authMiddleware, async (req, res) => {
   try {
     const { transactionId } = req.params;
-   
+
     const status = await rapydService.checkRemittanceStatus(transactionId);
-   
+
     res.json(status.data);
-   
+
   } catch (error) {
     logger.error('Check remittance status error:', error);
     res.status(500).json({
