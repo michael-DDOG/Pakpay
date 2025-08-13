@@ -10,24 +10,20 @@ const logger = require('../utils/logger');
 
 const router = express.Router();
 
-// Domestic transfer
-router.post('/domestic', authMiddleware, validateRequest(schemas.transfer), async (req, res) => {
+// Domestic transfer (renamed to /transfer for frontend consistency)
+router.post('/transfer', authMiddleware, validateRequest(schemas.transfer), async (req, res) => {
   const client = await db.getClient();
   
   try {
     const { receiverPhone, amount, description } = req.body;
     
     // Validate amount limits
-    if (amount < process.env.MIN_TRANSFER_AMOUNT) {
-      return res.status(400).json({ 
-        error: `Minimum transfer amount is PKR ${process.env.MIN_TRANSFER_AMOUNT}` 
-      });
+    if (amount < (process.env.MIN_TRANSFER_AMOUNT || 100)) {
+      return res.status(400).json({ error: `Minimum transfer amount is PKR ${process.env.MIN_TRANSFER_AMOUNT || 100}` });
     }
     
-    if (amount > process.env.TRANSACTION_LIMIT_SINGLE) {
-      return res.status(400).json({ 
-        error: `Maximum single transaction limit is PKR ${process.env.TRANSACTION_LIMIT_SINGLE}` 
-      });
+    if (amount > (process.env.TRANSACTION_LIMIT_SINGLE || 50000)) {
+      return res.status(400).json({ error: `Maximum single transaction limit is PKR ${process.env.TRANSACTION_LIMIT_SINGLE || 50000}` });
     }
     
     // Start transaction
@@ -72,7 +68,8 @@ router.post('/domestic', authMiddleware, validateRequest(schemas.transfer), asyn
       receiverWalletId: receiverWallet.id,
       amount,
       type: 'transfer',
-      description: description || `Transfer to ${receiver.first_name} ${receiver.last_name}`
+      description: description || `Transfer to ${receiver.first_name} ${receiver.last_name}`,
+      currency: 'PKR' // Explicitly set currency
     });
     
     // Log transaction initiation
@@ -110,7 +107,7 @@ router.post('/domestic', authMiddleware, validateRequest(schemas.transfer), asyn
       transaction: {
         referenceNumber: transaction.reference_number,
         amount: transaction.amount,
-        currency: transaction.currency,
+        currency: 'PKR',
         receiver: `${receiver.first_name} ${receiver.last_name}`,
         receiverPhone: receiver.phone_number,
         description: transaction.description,
@@ -123,14 +120,14 @@ router.post('/domestic', authMiddleware, validateRequest(schemas.transfer), asyn
   } catch (error) {
     await client.query('ROLLBACK');
     logger.error('Transfer error:', error);
-    res.status(500).json({ error: 'Transfer failed. Please try again.' });
+    res.status(500).json({ error: getErrorMessage(error) || 'Transfer failed. Please try again.' });
   } finally {
     client.release();
   }
 });
 
-// Get transfer limits
-router.get('/limits', authMiddleware, async (req, res) => {
+// Get transactions (renamed for clarity, matches frontend)
+router.get('/transactions', authMiddleware, async (req, res) => {
   try {
     const { limit = 50, offset = 0 } = req.query;
     
@@ -146,11 +143,11 @@ router.get('/limits', authMiddleware, async (req, res) => {
         referenceNumber: t.reference_number,
         type: t.type,
         amount: t.amount,
-        currency: t.currency,
+        currency: t.currency || 'PKR',
         status: t.status,
         description: t.description,
         isSender: t.sender_user_id === req.user.id,
-        counterparty: t.sender_user_id === req.user.id 
+        counterparty: t.sender_user_id === req.user.id
           ? `${t.receiver_first_name} ${t.receiver_last_name}`
           : `${t.sender_first_name} ${t.sender_last_name}`,
         createdAt: t.created_at,
